@@ -80,7 +80,7 @@ void sr_handlepacket(struct sr_instance* sr,
 
   /* fill in code here */
 
-  sr_ethernet_hdr_t *ethernet_hdr = 0;
+  sr_ethernet_hdr_t *ethernet_hdr;
 
   if ( len < sizeof(struct sr_ethernet_hdr) ) {
         fprintf(stderr , "** Error: packet is way to short \n");
@@ -118,21 +118,25 @@ void sr_handle_arp_pkt(struct sr_instance* sr,
   sr_arp_hdr_t *arp_hdr;
   arp_hdr = (struct sr_arp_hdr *)(packet + sizeof(struct sr_ethernet_hdr));
   assert(arp_hdr);
+  struct sr_if* iface = sr_get_interface(sr, interface);
+  assert(iface);
 
-  // if the arp is an arp request
-  if (arp_hdr->ar_op == htons(arp_op_request)) {
-    sr_handle_arp_request(sr, packet, len, interface);
-  }
-
-  //if the arp is an arp reply
-  if (arp_hdr->ar_op == htons(arp_op_reply)) {
-    sr_handle_arp_reply(sr, packet, len, interface);
+  // check if the arp is for me
+  if (arp_hdr->ar_tip == iface->ip) {
+    // if the arp is an arp request
+    if (arp_hdr->ar_op == htons(arp_op_request)) {
+      sr_handle_arp_request(sr, packet, len, interface);
+    }
+    //if the arp is an arp reply
+    if (arp_hdr->ar_op == htons(arp_op_reply)) {
+      sr_handle_arp_reply(sr, packet, len, interface);
+    }
   }
 
   return;
 } /* end sr_handle_arp_pkt */
 
-/* handle arp request packet */
+/* handle arp request to me */
 void sr_handle_arp_request(struct sr_instance* sr,
         uint8_t * packet, 
         unsigned int len,
@@ -151,63 +155,63 @@ void sr_handle_arp_request(struct sr_instance* sr,
   assert(ethernet_hdr);
   assert(arp_hdr);
 
-  if (arp_hdr->ar_tip == iface->ip) {
-    // update arp header
-    arp_hdr->ar_op = htons(arp_op_reply);
-    strncpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
-    strncpy(arp_hdr->ar_tip, arp_hdr->ar_sip, 4);    
-    strncpy(arp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
-    strncpy(arp_hdr->ar_sip, iface->ip, 4);
+  // update arp header
+  arp_hdr->ar_op = htons(arp_op_reply);
+  strncpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+  arp_hdr->ar_tip = arp_hdr->ar_sip;    
+  strncpy(arp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
+  arp_hdr->ar_sip = iface->ip;
 
-    // update ethernet header
-    strncpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
-    strncpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+  // update ethernet header
+  strncpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
+  strncpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
-    sr_send_packet(sr, sr_pkt, len, interface);
-    free(sr_pkt);
-  }  
+  sr_send_packet(sr, sr_pkt, len, interface);
+  free(sr_pkt);
 
   return;
 } /* end sr_handle_arp_request */
 
-/* handle arp reply packet */
+/* handle arp reply to me */
 void sr_handle_arp_reply(struct sr_instance* sr,
         uint8_t * packet, 
         unsigned int len,
         char* interface) 
-{
-  sr_ethernet_hdr_t *ethernet_hdr;
-  sr_ip_hdr_t ip_hdr;
+{  
   sr_arp_hdr_t *arp_hdr;
   arp_hdr = (sr_arp_hdr *)(packet + sizeof(struct sr_ethernet_hdr));
-  struct sr_if* iface = sr_get_interface(sr, interface);
   assert(arp_hdr);
-  assert(iface);
+  //struct sr_if* iface = sr_get_interface(sr, interface);  
+  //assert(iface);
 
-  if (arp_hdr->ar_tip == iface->ip) {
-    struct sr_arpreq *req;
-    req = sr_arpcache_insert(sr->cache, arp_hdr->ar_sha, arp_hdr->ar_sip);
+  // cache the arp reply
+  struct sr_arpreq *req;
+  req = sr_arpcache_insert(sr->cache, arp_hdr->ar_sha, arp_hdr->ar_sip);
 
-    if (req) {
-      struct sr_packet *pkt;   
-      for (pkt = req->packets; pkt; pkt = pkt->next) {
-        // update ethernet header
-        ethernet_hdr = (sr_ethernet_hdr_t *)(pkt->buf);
-        strncpy(ethernet_hdr->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN);
-        strncpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+  // forward packets waiting on this arp reply
+  if (req) {
+    sr_ethernet_hdr_t *ethernet_hdr;
+    sr_ip_hdr_t ip_hdr;
+    struct sr_packet *pkt;   
+    for (pkt = req->packets; pkt; pkt = pkt->next) {
+      // update ethernet header
+      ethernet_hdr = (sr_ethernet_hdr_t *)(pkt->buf);
+      strncpy(ethernet_hdr->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+      strncpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
         
-        // update ip header
-        ip_hdr = (sr_ip_hdr *)(pkt->buf + sizeof(struct sr_ethernet_hdr));
-        ip_hdr->ip_ttl--;
-        bzero(&(ip_hdr->ip_sum), 2);
-        uint16_t icmp_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
-        ip_hdr->ip_sum = ip_cksum;
+      // update ip header
+      ip_hdr = (sr_ip_hdr *)(pkt->buf + sizeof(struct sr_ethernet_hdr));
+      ip_hdr->ip_ttl--;
+      bzero(&(ip_hdr->ip_sum), 2);
+      uint16_t icmp_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+      ip_hdr->ip_sum = ip_cksum;
 
-        sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
-      }
-      sr_arpreq_destroy(sr->cache, req);
+      sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
     }
+
+    sr_arpreq_destroy(sr->cache, req);
   }
+  
   return;
 } /* end sr_handle_arp_reply */
 
@@ -243,7 +247,7 @@ void sr_handle_ip_pkt(struct sr_instance* sr,
   struct sr_if* iface = sr_get_interface(sr, interface);  
   assert(iface);
 
-  // if it is for me
+  // if the ip packet is for me
   if (ip_hdr->ip_dst == iface->ip) {
     sr_handle_icmp_pkt(sr, packet, len, interface);
   }
@@ -300,7 +304,6 @@ void sr_handle_icmp_pkt(struct sr_instance* sr,
       ip_hdr->ip_dst = ip_hdr->ip_src;
       ip_hdr->ip_src = iface->ip;
       ip_hdr->ip_ttl--;
-      // ip_hdr->ip_p = ip_protocol_icmp;
       uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
       ip_hdr->ip_sum = ip_cksum;
 
@@ -314,8 +317,8 @@ void sr_handle_icmp_pkt(struct sr_instance* sr,
       free(sr_pkt);
     }
   } 
-  else {
-    //
+  else if (len > (sizeof(sr_ethernet_hdr) + sizeof(sr_ip_hdr))) {
+    // icmp port unreachable
     sr_icmp_dest_unreachable(sr, packet, len, interface, 3, 3);
   }
 
@@ -355,12 +358,12 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
 
   //update ip header
   ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
-  strncpy(ip_hdr->ip_dst, ip_hdr->ip_src, 4);
-  strncpy(ip_hdr->ip_src, iface->ip, 4);
+  ip_hdr->ip_dst = ip_hdr->ip_src;
+  ip_hdr->ip_src = iface->ip;
   ip_hdr->ip_ttl--;
   ip_hdr->ip_p = ip_protocol_icmp;
-  ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
-  uint16_t ip_hdr->ip_sum = ip_cksum;
+  uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+  ip_hdr->ip_sum = ip_cksum;
 
   // update ethernet header
   ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
@@ -387,32 +390,32 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
   ip_hdr = (sr_ip_hdr *)(packet + sizeof(struct sr_ethernet_hdr));
   assert(ip_hdr);
 
-  uint32_t ip_dst;
-  ip_dst = ip_hdr->ip_dst;
+  uint32_t ip_dest;
+  ip_dest = ip_hdr->ip_dst;
 
-  struct sr_rt *rt_entry;
-  rt_entry->gw = 0;
-  rt_entry->mask = 0;
+  uint32_t gateway = 0;  // next hop ip addr
+  uint32_t mask = 0;
+  char o_interface[sr_IFACE_NAMELEN];   // outgoing interface    
   // lookup the longest prefix match
   struct sr_rt *rt;
   for (rt = sr->routing_table; rt != NULL; rt = rt->next) {
-    if (((ip_dst & rt->mask) == rt->dest) && (rt->mask > rt_entry->mask)){
-      rt_entry = rt;
+    if (((ip_dest & rt->mask->s_addr) == rt->dest->s_addr) && 
+        (rt->mask->s_addr > mask)) {
+      gateway = rt->gw->s_addr;
+      mask = rt->mask->s_addr;
+      strncpy(o_interface, st->interface, sr_IFACE_NAMELEN);
     }
   }
 
-  // if no match
-  if (! rt_entry->gw) {
-    sr_icmp_dest_unreachable(sr, packet, len, interface, type, code);
+  // if no match, icmp net unreachable
+  if (! gateway) {
+    sr_icmp_dest_unreachable(sr, packet, len, interface, 3, 0);
     return;
   }
   // match
-  else {
-    uint32_t gateway = rt_entry->gw;  // next hop ip
-    char o_interface[sr_IFACE_NAMELEN];  // outgoing interface
-    strncpy(o_interface, rt_entry->interface, sr_IFACE_NAMELEN);
-    struct sr_if* o_iface = sr_get_interface(sr, rt_entry->interface);
-    assert(iface);
+  else {  
+    struct sr_if* o_iface = sr_get_interface(sr, o_interface);
+    assert(o_iface);
 
     // make a copy of the packet
     uint8_t *sr_pkt = (uint8_t *)malloc(len);
@@ -420,32 +423,30 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
 
     // check arp cache for next hop mac
     struct sr_arpentry *arp_entry; 
-    arp_entry = sr_arpcache_lookup(sr->cache, gateway);
+    arp_entry = sr_arpcache_lookup(sr->cache, next_hop);
 
     //arp cache hit
     if (arp_entry) {
-      strncpy(ethernet_hdr->ether_dhost, arp_entry->mac, 6);
+      // update ethernet header
+      ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
+      strncpy(ethernet_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN); 
+      strncpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN); 
+    
+      // update ip header
+      ip_hdr = (sr_ip_hdr *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
+      ip_hdr->ip_ttl--;
+      bzero(&(ip_hdr->ip_sum), 2);  
+      uint16_t icmp_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+      ip_hdr->ip_sum = ip_cksum;      
+
       // send frame to next hop
       sr_send_packet(sr, sr_pkt, len, o_interface);
       free(arp_entry);
-    
-
-    // update ip header
-    ip_hdr = (sr_ip_hdr *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
-    ip_hdr->ip_ttl--;
-    bzero(&(ip_hdr->ip_sum), 2);  
-    uint16_t icmp_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
-    ip_hdr->ip_sum = ip_cksum;
-
-    // update ethernet header
-    ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
-    strncpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);
-  }
-    
+    }    
     // arp miss
     else {
       struct sr_arpreq *arp_req;
-      arp_req = sr_arpcache_queuereq(&(sr->cache), gateway, sr_pkt, len, o_interface);
+      arp_req = sr_arpcache_queuereq(&(sr->cache), gateway, packet, len, o_interface);
       // handle_arpreq(sr->cache, arp_req);
     }
     free(sr_pkt);
