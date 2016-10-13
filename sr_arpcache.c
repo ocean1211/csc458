@@ -16,8 +16,52 @@
   checking whether we should resend an request or destroy the arp request.
   See the comments in the header file for an idea of what it should look like.
 */
-void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
+void sr_arpcache_sweepreqs(struct sr_instance *sr) {
+   struct sr_arpreq * temp ;
+    for ( temp=sr->cahce->requests; temp->next!=NULL; temp = temp->next) {
+         handle_arpreq(temp);
+    }
     /* Fill this in */
+}
+
+/*
+handle arp requests
+*/
+void handle_arpreq(struct sr_arpcache* cache struct sr_arpreq* request) {
+    /*
+    if difftime(now, req->sent) > 1.0
+           if req->times_sent >= 5:
+               send icmp host unreachable to source addr of all pkts waiting
+                 on this request
+               arpreq_destroy(req)
+           else:
+               send arp request
+               req->sent = now
+               req->times_sent++
+    */
+
+    //get the current time
+    time_t now =time(NULL);
+    //get the difference between curren time and time that last time arp request was sent
+    double diff = difftime(now, request->sent);
+    //handle arp request
+    if(diff > 1.0) {
+        //arp request has been sent for 5 times, send icmp host 
+        //unreachable and destory arp request
+        if(requst->times_sent >= 5){
+           //  send icmp host unreachable to source addr of all pkts waiting
+           sr_arpreq_destroy(cache, request);
+        }
+        // increment on field request->sent and update request->times_sent
+        else{
+             sr_packet * arprequest;
+             arprequest -> buf
+            //send arp request
+
+            request -> sent = now;
+            request -> times_sent++;
+        }
+    }
 }
 
 /* You should not need to touch the rest of this code. */
