@@ -20,7 +20,7 @@
 #include "sr_router.h"
 #include "sr_protocol.h"
 #include "sr_arpcache.h"
-#include "sr_utils.h"
+#include "sr_utils.h" 
 
 /*---------------------------------------------------------------------
  * Method: sr_init(void)
@@ -203,7 +203,7 @@ void sr_handle_arp_reply(struct sr_instance* sr,
       ip_hdr = (sr_ip_hdr *)(pkt->buf + sizeof(struct sr_ethernet_hdr));
       ip_hdr->ip_ttl--;
       bzero(&(ip_hdr->ip_sum), 2);
-      uint16_t icmp_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+      uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
       ip_hdr->ip_sum = ip_cksum;
 
       sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
@@ -274,6 +274,12 @@ void sr_handle_icmp_pkt(struct sr_instance* sr,
 
   // if it is an icmp echo request for me
   if (ip_hdr->ip_p == ip_protocol_icmp) {
+    if (len < sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr) + 
+              sizeof(struct sr_icmp_hdr)) {
+        fprintf(stderr , "** Error: packet is way to short \n");
+        return -1;
+    }
+
     icmp_hdr = (sr_icmp_hdr_t *)(packet + sizeof(struct sr_ethernet_hdr) +
         sizeof(struct sr_ip_hdr));
       
@@ -304,6 +310,7 @@ void sr_handle_icmp_pkt(struct sr_instance* sr,
       ip_hdr->ip_dst = ip_hdr->ip_src;
       ip_hdr->ip_src = iface->ip;
       ip_hdr->ip_ttl--;
+      bzero(&(ip_hdr->ip_sum), 2);  
       uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
       ip_hdr->ip_sum = ip_cksum;
 
@@ -339,21 +346,28 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   sr_icmp_hdr_t *icmp_hdr;
   struct sr_if* iface = sr_get_interface(sr, interface);
   assert(iface);
-  unsigned int pkt_len;
+  unsigned int pkt_len, e_hdr_len, ip_hdr_len, icmp_hdr_len;
+
+  e_hdr_len = sizeof(struct sr_ethernet_hdr);
+  ip_hdr_len = sizeof(struct sr_ip_hdr);
+  icmp_hdr_len = sizeof(struct sr_icmp_hdr);
+
 
   // "The IP header plus the first 8 bytes of the original datagram's data 
   // is returned to the sender. --ICMP protocal RFC792"
-  pkt_len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr) + 8;
+  // construct the icmp packet
+  pkt_len = e_hdr_len + ip_hdr_len + icmp_hdr_len + 4 + ip_hdr_len + 8;
   uint8_t *sr_pkt = (uint8_t *)malloc(pkt_len);
-  memcpy(sr_pkt, packet, pkt_len);
+
+  memcpy(sr_pkt, packet, e_hdr_len + ip_hdr_len);
+  memcpy(sr_pkt + e_hdr_len + ip_hdr_len + icmp_hdr_len + 4, packet, ip_hdr_len + 8);
 
   // update icmp header
-  icmp_hdr = (sr_icmp_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr) +
-          sizeof(struct sr_ip_hdr));
+  icmp_hdr = (sr_icmp_hdr_t *)(sr_pkt + e_hdr_len + ip_hdr_len);
   icmp_hdr->icmp_type = icmp_type;
   icmp_hdr->icmp_code = icmp_code;
-  uint16_t icmp_cksum = cksum(icmp_hdr, pkt_len - sizeof(struct sr_ethernet_hdr) - 
-          sizeof(struct sr_ip_hdr));
+  bzero(&(icmp_hdr->icmp_sum), 2);
+  uint16_t icmp_cksum = cksum(icmp_hdr, icmp_hdr_len + 4 + ip_hdr_len + 8);
   icmp_hdr->icmp_sum = icmp_cksum;
 
   //update ip header
@@ -362,6 +376,7 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   ip_hdr->ip_src = iface->ip;
   ip_hdr->ip_ttl--;
   ip_hdr->ip_p = ip_protocol_icmp;
+  bzero(&(ip_hdr->ip_sum), 2);
   uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
   ip_hdr->ip_sum = ip_cksum;
 
@@ -436,7 +451,7 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
       ip_hdr = (sr_ip_hdr *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
       ip_hdr->ip_ttl--;
       bzero(&(ip_hdr->ip_sum), 2);  
-      uint16_t icmp_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+      uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
       ip_hdr->ip_sum = ip_cksum;      
 
       // send frame to next hop
