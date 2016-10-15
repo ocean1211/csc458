@@ -256,7 +256,8 @@ void sr_handle_ip_pkt(struct sr_instance* sr,
   else if (ip_hdr->ttl > 1) {
     sr_forward_ip_pkt(sr, packet, len, interface);
   }
-  // if it is not for me and ttl equal or less than 1
+  // if it is not for me and ttl equal or less than 1,
+  // drop the packet and send an icmp message to source ip
   else {
     sr_icmp_dest_unreachable(sr, packet, len, interface, 11, 0);
     fprintf(stderr , "** Error: packet received with time exceeded\n");
