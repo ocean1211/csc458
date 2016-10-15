@@ -127,7 +127,7 @@ void sr_handle_arp_pkt(struct sr_instance* sr,
   }
 
   // if the arp is an arp request and target ip is me
-  if (arp_hdr->ar_op == htons(arp_op_request)) {
+  if (arp_hdr->ar_op == htons(arp_op_request)) {  
     sr_handle_arp_request(sr, packet, len, interface);
   }
 
@@ -199,7 +199,7 @@ void sr_handle_arp_reply(struct sr_instance* sr,
     struct sr_if* o_iface; // outgoing interface
     struct sr_packet *pkt;   
     for (pkt = req->packets; pkt; pkt = pkt->next) {
-      o_iface = sr_get_interface(sr, pkt->iface);  
+      o_iface = sr_get_interface(sr, pkt->iface);
       assert(iface);
       // update ethernet header
       ethernet_hdr = (sr_ethernet_hdr_t *)(pkt->buf);
@@ -361,7 +361,7 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   icmp_hdr_len = sizeof(struct sr_icmp_hdr);
 
 
-  // "The IP header plus the first 8 bytes of the original datagram's data 
+  // "The IP header plus the first 8 bytes of the original datagram's data
   // is returned to the sender. --ICMP protocal RFC792"
   // construct the icmp packet
   pkt_len = e_hdr_len + ip_hdr_len + icmp_hdr_len + 4 + ip_hdr_len + 8;
