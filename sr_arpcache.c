@@ -25,9 +25,6 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
     }
 }
 
-
-
-
 /* 
    handle arp requests
 */
@@ -51,12 +48,12 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
                 struct sr_ethernet_hdr* Ethenet =  (struct sr_ethernet_hdr*)(wait_packet->buff);
                 unsigned char *ifacemac;
                 //get the destination MAC address
-                strncpy(ifacemac , Ethenet->ether_dhost, ETHER_ADDR_LEN);
+                memcpy(ifacemac , Ethenet->ether_dhost, ETHER_ADDR_LEN);
                 char* ifacename;
                 //go through interface list, get the inteface name by MAC address
                 for(list=sr->if_list; list!=NULL; list=list->next){
                     if(strcmp(list->addr, ifacemac) == 0)
-                        strncpy(ifacename, list->name, sizeof(list->name));
+                        memcpy(ifacename, list->name, sizeof(list->name));
                         break;
                 }
                 //send imcp to source addr
@@ -73,7 +70,7 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
             struct sr_if* = sr_get_interface(sr, iface);
             //the MAC address and ip address of the outgoing port 
             unsigned char *ifacemac;
-            strncpy (ifacemac, sr_if->addr, ETHER_ADDR_LEN);
+            memcpy (ifacemac, sr_if->addr, ETHER_ADDR_LEN);
             uint32_t ifaceip = sr_if -> ip;
             // the destination ip address
             uint32_t destip = request->ip;
@@ -96,9 +93,9 @@ uint8_t *construct_arp_buff(unsigned char*ifacemac, uint32_t ifaceip, struct sr_
             //construct an Ethenet header
             struct sr_ethernet_hdr*Ethenet = (struct sr_ethernet_hdr*)arp_packet;
             // destination Ethenet address is ffffff
-            strncpy(Ethenet->ether_dhost, "ffffff", ETHER_ADDR_LEN) ;
+            memcpy(Ethenet->ether_dhost, "ffffff", ETHER_ADDR_LEN) ;
             // source Ethenet address
-            strncpy(Ethenet->ether_shost, ifacemac, ETHER_ADDR_LEN);
+            memcpy(Ethenet->ether_shost, ifacemac, ETHER_ADDR_LEN);
             // Ethenent type is ARP
             Ethenet->ether_type = ethertype_arp;  
             // construct an APR header
@@ -108,8 +105,8 @@ uint8_t *construct_arp_buff(unsigned char*ifacemac, uint32_t ifaceip, struct sr_
             arp_header -> ar_hln = 6;
             arp_header -> ar_pln = 4;
             arp_header -> ar_op = arp_op_request;
-            strncpy(arp.header -> ar_sha, Ethenet->ether_shost, ETHER_ADDR_LEN);
-            strncpy( arp.header -> ar_tha, Ethenet->ether_dhost, ETHER_ADDR_LEN );
+            memcpy(arp_header -> ar_sha, Ethenet->ether_shost, ETHER_ADDR_LEN);
+            memcpy(arp_header -> ar_tha, Ethenet->ether_dhost, ETHER_ADDR_LEN );
             arp.header->ar_sip = ifaceip ;
             arp.header->ar_tip = destip ;
 
