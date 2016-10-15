@@ -83,7 +83,7 @@ void sr_handlepacket(struct sr_instance* sr,
   sr_ethernet_hdr_t *ethernet_hdr;
 
   if ( len < sizeof(struct sr_ethernet_hdr) ) {
-        fprintf(stderr , "** Error: packet is way to short \n");
+        fprintf(stderr , "** Error: packet is way too short \n");
         return -1;
   }
 
@@ -111,7 +111,7 @@ void sr_handle_arp_pkt(struct sr_instance* sr,
         char* interface) 
 {
   if (len < sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr)) {
-        fprintf(stderr , "** Error: packet is way to short \n");
+        fprintf(stderr , "** Error: packet is way too short \n");
         return -1;
   }
 
@@ -169,8 +169,8 @@ void sr_handle_arp_request(struct sr_instance* sr,
   arp_hdr->ar_sip = iface->ip;
 
   // update ethernet header
-  strncpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
-  strncpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+  memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
+  memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
   sr_send_packet(sr, sr_pkt, len, interface);
   free(sr_pkt);
