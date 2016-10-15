@@ -19,29 +19,21 @@
 void sr_arpcache_sweepreqs(struct sr_instance *sr) {
    struct sr_arpreq * temp ;
    struct sr_arpcache* cache;
-   cache = &sr->cache;
-    for ( temp=cache->requests; temp->next!=NULL; temp = temp->next) {
+   cache = & (sr->cache);
+    for ( temp=cache->requests; temp != NULL; temp=temp->next) {
          handle_arpreq(sr, temp);
     }
 }
 
-/*
-handle arp requests
-*/
-void handle_arpreq(struct sr_arpcache* sr struct sr_arpreq* request) {
-    /*
-    if difftime(now, req->sent) > 1.0
-           if req->times_sent >= 5:
-               send icmp host unreachable to source addr of all pkts waiting
-                 on this request
-               arpreq_destroy(req)
-           else:
-               send arp request
-               req->sent = now
-               req->times_sent++
-    */
 
-    //get the current time
+
+
+/* 
+   handle arp requests
+*/
+void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
+   
+   //get the current time
     time_t now =time(NULL);
     //get the difference between curren time and time that last time arp request was sent
     double diff = difftime(now, request->sent);
@@ -51,13 +43,26 @@ void handle_arpreq(struct sr_arpcache* sr struct sr_arpreq* request) {
         //unreachable and destory arp request
         if(requst->times_sent >= 5){
             //send icmp host unreachable to source addr of all pkts waiting
-
-            //get the source ip address of 
-
-
-
-
-
+            struct sr_packet* wait_packet ;
+            struct sr_if* list;
+            //handle each sr packet
+            for(wait_packet=request->packets; wait_packet != NULL; wait_packet = wait_packet ->next){
+                //get Ethernet header from raw Ethernet
+                struct sr_ethernet_hdr* Ethenet =  (struct sr_ethernet_hdr*)(wait_packet->buff);
+                unsigned char *ifacemac;
+                //get the destination MAC address
+                strncpy(ifacemac , Ethenet->ether_dhost, ETHER_ADDR_LEN);
+                char* ifacename;
+                //go through interface list, get the inteface name by MAC address
+                for(list=sr->if_list; list!=NULL; list=list->next){
+                    if(strcmp(list->addr, ifacemac) == 0)
+                        strncpy(ifacename, list->name, sizeof(list->name));
+                        break;
+                }
+                //send imcp to source addr
+                sr_icmp_dest_unreachable(sr, waitpacket->buff, wait_packet->len, ifacename, 3, 1);
+            }
+           // destory arp request in the queue
            sr_arpreq_destroy(sr->cache, request);
         }
         // increment on field request->sent and update request->times_sent
@@ -67,7 +72,8 @@ void handle_arpreq(struct sr_arpcache* sr struct sr_arpreq* request) {
             char *iface = request->packets->iface;
             struct sr_if* = sr_get_interface(sr, iface);
             //the MAC address and ip address of the outgoing port 
-            strncpy (unsigned char*ifacemac, sr_if->addr, ETHER_ADDR_LEN);
+            unsigned char *ifacemac;
+            strncpy (ifacemac, sr_if->addr, ETHER_ADDR_LEN);
             uint32_t ifaceip = sr_if -> ip;
             // the destination ip address
             uint32_t destip = request->ip;
@@ -78,6 +84,7 @@ void handle_arpreq(struct sr_arpcache* sr struct sr_arpreq* request) {
         }
     }
 }
+
 
 /*
 construct an ARP buffer
@@ -107,6 +114,7 @@ uint8_t *construct_arp_buff(unsigned char*ifacemac, uint32_t ifaceip, struct sr_
             arp.header->ar_tip = destip ;
 
 }
+
 
 
 
