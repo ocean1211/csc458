@@ -46,14 +46,14 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
             for(wait_packet=request->packets; wait_packet != NULL; wait_packet = wait_packet ->next){
                 //get Ethernet header from raw Ethernet
                 struct sr_ethernet_hdr* Ethenet =  (struct sr_ethernet_hdr*)(wait_packet->buff);
-                unsigned char *ifacemac;
+                unsigned char ifacemac[ETHER_ADDR_LEN];
                 //get the destination MAC address
                 memcpy(ifacemac , Ethenet->ether_dhost, ETHER_ADDR_LEN);
-                char* ifacename;
+                char ifacename[sr_IFACE_NAMELEN];
                 //go through interface list, get the inteface name by MAC address
                 for(list=sr->if_list; list!=NULL; list=list->next){
                     if(strcmp(list->addr, ifacemac) == 0)
-                        memcpy(ifacename, list->name, sizeof(list->name));
+                        memcpy(ifacename, list->name, sr_IFACE_NAMELEN);
                         break;
                 }
                 //send imcp to source addr
@@ -69,7 +69,7 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
             char *iface = request->packets->iface;
             struct sr_if* = sr_get_interface(sr, iface);
             //the MAC address and ip address of the outgoing port 
-            unsigned char *ifacemac;
+            unsigned char ifacemac[ETHER_ADDR_LEN];
             memcpy (ifacemac, sr_if->addr, ETHER_ADDR_LEN);
             uint32_t ifaceip = sr_if -> ip;
             // the destination ip address
