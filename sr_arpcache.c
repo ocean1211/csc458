@@ -52,12 +52,13 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
                 char *ifacename = malloc(sr_IFACE_NAMELEN * sizeof(char));
                 //go through interface list, get the inteface name by MAC address
                 for(list=sr->if_list; list!=NULL; list=list->next){
-                    if(strcmp(list->addr, ifacemac) == 0)
+                    if(memcmp(list->addr, ifacemac, ETHER_ADDR_LEN))
                         memcpy(ifacename, list->name, sr_IFACE_NAMELEN);
                         break;
                 }
                 //send imcp to source addr
-                sr_icmp_dest_unreachable(sr, waitpacket->buff, wait_packet->len, ifacename, 3, 1);
+                sr_icmp_dest_unreachable(sr, waitpacket->buff, wait_packet->len, ifacename, 0x3, 0x1);
+
                 //free buffer 
                 free(ifacemac);
                 free(ifacename);
