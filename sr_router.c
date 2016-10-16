@@ -106,9 +106,9 @@ void sr_handlepacket(struct sr_instance* sr,
 /* helper function for sr_handlepacket() */
 /* if the packet is an arp packet */
 void sr_handle_arp_pkt(struct sr_instance* sr,
-        uint8_t * packet, 
+        uint8_t * packet,
         unsigned int len,
-        char* interface) 
+        char* interface)
 {
   if (len < sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr)) {
         fprintf(stderr , "** Error: packet is way too short \n");
@@ -190,7 +190,7 @@ void sr_handle_arp_reply(struct sr_instance* sr,
 
   // cache the arp reply
   struct sr_arpreq *req;
-  req = sr_arpcache_insert(sr->cache, arp_hdr->ar_sha, arp_hdr->ar_sip);
+  req = sr_arpcache_insert(&(sr->cache), ntohs(arp_hdr->ar_sha), arp_hdr->ar_sip);
 
   // forward packets waiting on this arp reply
   if (req) {
@@ -237,10 +237,8 @@ void sr_handle_ip_pkt(struct sr_instance* sr,
   ip_hdr = (sr_ip_hdr *)(packet + sizeof(struct sr_ethernet_hdr));
   assert(ip_hdr);  
 
-  // verify ip header checksum
-  uint16_t ip_cksum = ip_hdr->ip_sum;
-  bzero(&(ip_hdr->ip_sum), 2);
-  if (cksum(ip_hdr, 4*(ip_hdr->ip_hl)) != ip_cksum) {
+  // verify ip header checksum  
+  if (cksum(ip_hdr, 4*(ip_hdr->ip_hl)) != 0){
     fprintf(stderr , "** Error: packet received with error\n");
     return -1;
   }
@@ -282,20 +280,18 @@ void sr_handle_icmp_pkt(struct sr_instance* sr,
 
   // if it is an icmp echo request for me
   if (ip_hdr->ip_p == ip_protocol_icmp) {
+    // sanity check
     if (len < sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr) + 
               sizeof(struct sr_icmp_hdr)) {
-        fprintf(stderr , "** Error: packet is way to short \n");
+        fprintf(stderr , "** Error: packet is way too short \n");
         return -1;
     }
 
     icmp_hdr = (sr_icmp_hdr_t *)(packet + sizeof(struct sr_ethernet_hdr) +
-        sizeof(struct sr_ip_hdr));
-      
-    // verify icmp header checksum
-    uint16_t icmp_cksum = icmp_hdr->icmp_sum;
-    bezero(&(icmp_hdr->icmp_sum), 2);
+        sizeof(struct sr_ip_hdr));      
+  
     if (cksum(icmp_hdr, len - sizeof(struct sr_ethernet_hdr) - 
-              sizeof(struct sr_ip_hdr)) != icmp_cksum) {
+              sizeof(struct sr_ip_hdr)) != 0) {
       fprintf(stderr , "** Error: packet received with error\n");
       return -1;
     }
@@ -306,9 +302,11 @@ void sr_handle_icmp_pkt(struct sr_instance* sr,
       memcpy(sr_pkt, packet, len);
 
       // update icmp header
+      uint16_t icmp_cksum;
       icmp_hdr = (sr_icmp_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr) +
               sizeof(struct sr_ip_hdr));
-      icmp_hdr->icmp_type = 0;  // icmp echo reply
+      icmp_hdr->icmp_type = 0;  // set icmp type to echo reply
+      bzero(&(icmp_hdr->icmp_sum), 2);
       icmp_cksum = cksum(icmp_hdr, len - sizeof(struct sr_ethernet_hdr) - 
               sizeof(struct sr_ip_hdr));
       icmp_hdr->icmp_sum = icmp_cksum;
