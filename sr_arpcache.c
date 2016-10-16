@@ -110,6 +110,8 @@ uint8_t *construct_arp_buff(unsigned char*ifacemac, uint32_t ifaceip, struct sr_
             arp.header->ar_sip = ifaceip ;
             arp.header->ar_tip = destip ;
 
+            return arp_packet;
+
 }
 
 
