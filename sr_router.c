@@ -351,35 +351,29 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
 {
   sr_ethernet_hdr_t *ethernet_hdr;
   sr_ip_hdr_t *ip_hdr;
-  sr_icmp_hdr_t *icmp_hdr;
+  sr_icmp_t3_hdr_t icmp_t3_hdr;
   struct sr_if* iface = sr_get_interface(sr, interface);
   assert(iface);
-  unsigned int pkt_len, e_hdr_len, ip_hdr_len, icmp_hdr_len;
+  unsigned int pkt_len;
 
-  e_hdr_len = sizeof(struct sr_ethernet_hdr);
-  ip_hdr_len = sizeof(struct sr_ip_hdr);
-  icmp_hdr_len = sizeof(struct sr_icmp_hdr);
-
-
-  // "The IP header plus the first 8 bytes of the original datagram's data
-  // is returned to the sender. --ICMP protocal RFC792"
   // construct the icmp packet
-  pkt_len = e_hdr_len + ip_hdr_len + icmp_hdr_len + 4 + ip_hdr_len + 8;
+  pkt_len = sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr) + sizeof(sr_icmp_t3_hdr);
   uint8_t *sr_pkt = (uint8_t *)malloc(pkt_len);
+  memcpy(sr_pkt, packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr));
 
-  memcpy(sr_pkt, packet, e_hdr_len + ip_hdr_len);
-  memcpy(sr_pkt + e_hdr_len + ip_hdr_len + icmp_hdr_len + 4, packet, ip_hdr_len + 8);
-
-  // update icmp header
-  icmp_hdr = (sr_icmp_hdr_t *)(sr_pkt + e_hdr_len + ip_hdr_len);
-  icmp_hdr->icmp_type = icmp_type;
-  icmp_hdr->icmp_code = icmp_code;
-  bzero(&(icmp_hdr->icmp_sum), 2);
-  uint16_t icmp_cksum = cksum(icmp_hdr, icmp_hdr_len + 4 + ip_hdr_len + 8);
-  icmp_hdr->icmp_sum = icmp_cksum;
-
-  //update ip header
   ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
+  icmp_t3_hdr = (sr_icmp_t3_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr));
+  // update icmp header
+  icmp_t3_hdr->icmp_type = icmp_type;
+  icmp_t3_hdr->icmp_code = icmp_code;
+  bzero(&(icmp_t3_hdr->icmp_sum), 2);
+  bzero(&(icmp_t3_hdr->unused), 2);
+  bzero(&(icmp_t3_hdr->next_mtu), 2);
+  memcpy(icmp_t3_hdr->data, ip_hdr, ICMP_DATA_SIZE);
+  uint16_t icmp_cksum = cksum(icmp_t3_hdr, sizeof(struct sr_icmp_t3_hdr));
+  icmp_t3_hdr->icmp_sum = icmp_cksum;
+
+  //update ip header  
   ip_hdr->ip_dst = ip_hdr->ip_src;
   ip_hdr->ip_src = iface->ip;
   ip_hdr->ip_ttl--;
