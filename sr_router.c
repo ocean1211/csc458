@@ -317,7 +317,7 @@ void sr_handle_icmp_pkt(struct sr_instance* sr,
       ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
       ip_hdr->ip_dst = ip_hdr->ip_src;
       ip_hdr->ip_src = iface->ip;
-      ip_hdr->ip_ttl--;
+      ip_hdr->ip_ttl = 0xff;
       bzero(&(ip_hdr->ip_sum), 2);  
       uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
       ip_hdr->ip_sum = ip_cksum;
