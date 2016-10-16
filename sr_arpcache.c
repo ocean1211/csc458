@@ -41,7 +41,7 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
         if(requst->times_sent >= 5){
             //send icmp host unreachable to source addr of all pkts waiting
             struct sr_packet* wait_packet ;
-            struct sr_if* list;
+            struct sr_if* list ;
             //handle each sr packet
             for(wait_packet=request->packets; wait_packet != NULL; wait_packet = wait_packet ->next){
                 //get Ethernet header from raw Ethernet
@@ -51,7 +51,7 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
                 memcpy(ifacemac , Ethenet->ether_dhost, ETHER_ADDR_LEN);
                 char *ifacename = malloc(sr_IFACE_NAMELEN * sizeof(char));
                 //go through interface list, get the inteface name by MAC address
-                for(list=sr->if_list; list!=NULL; list=list->next){
+                for(list=sr-> if_list; list!=NULL; list=list->next){
                     if(memcmp(list->addr, ifacemac, ETHER_ADDR_LEN))
                         memcpy(ifacename, list->name, sr_IFACE_NAMELEN);
                         break;
@@ -71,11 +71,11 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
             //send arp request
             //get the outgoing inteface for arp_request packets
             char *iface = request->packets->iface;
-            struct sr_if* = sr_get_interface(sr, iface);
+            struct sr_if* interface = sr_get_interface(sr, iface);
             //the MAC address and ip address of the outgoing port 
             unsigned char *ifacemac = (unsigned char *)malloc(ETHER_ADDR_LEN*sizeof(unsigned char));
-            memcpy(ifacemac, sr_if -> addr, ETHER_ADDR_LEN);
-            uint32_t ifaceip = sr_if -> ip;
+            memcpy(ifacemac, interface -> addr, ETHER_ADDR_LEN);
+            uint32_t ifaceip =interface -> ip;
             // the destination ip address
             uint32_t destip = request->ip;
             uint8_t *arp_packet = construct_arp_buff(ifacemac,  ifaceip, request); 
