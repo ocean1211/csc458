@@ -37,14 +37,14 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
     if(diff > 1.0) {
         /*arp request has been sent for 5 times, send icmp host */
         /*unreachable and destory arp request */
-        if(requst->times_sent >= 5){
+        if(request->times_sent >= 5){
             /*send icmp host unreachable to source addr of all pkts waiting */
             struct sr_packet* wait_packet ;
             struct sr_if* list ;
             /*handle each sr packet */
             for(wait_packet=request->packets; wait_packet != NULL; wait_packet = wait_packet ->next){
                 /*get Ethernet header from raw Ethernet*/
-                struct sr_ethernet_hdr* Ethenet =  (struct sr_ethernet_hdr*)(wait_packet->buff);
+                struct sr_ethernet_hdr* Ethenet =  (struct sr_ethernet_hdr*)(wait_packet->buf);
                 unsigned char *ifacemac = malloc(ETHER_ADDR_LEN*sizeof(unsigned char));
                 /*get the destination MAC address*/
                 memcpy(ifacemac , Ethenet->ether_dhost, ETHER_ADDR_LEN);
@@ -56,14 +56,14 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
                         break;
                 }
                 /*send imcp to source addr */
-                sr_icmp_dest_unreachable(sr, waitpacket->buff, wait_packet->len, ifacename, 0x3, 0x1);
+                sr_icmp_dest_unreachable(sr, wait_packet->buf, wait_packet->len, ifacename, 0x3, 0x1);
 
                 /*free buffer */
                 free(ifacemac);
                 free(ifacename);
             }
            /* destory arp request in the queue */
-           sr_arpreq_destroy(sr->cache, request);
+           sr_arpreq_destroy(&(sr->cache), request);
         }
         /* increment on field request->sent and update request->times_sent */
         else{
@@ -79,7 +79,7 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
             uint32_t ifaceip =interface -> ip;
             /* the destination ip address */
             uint32_t destip = request->ip;
-            uint8_t *arp_packet = construct_arp_buff(ifacemac,  ifaceip, destip, request); 
+            uint8_t *arp_packet = construct_arp_buff(ifacemac,  ifaceip, destip); 
             sr_send_packet(sr, arp_packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr), iface);
             /* free packet buffer */
             free(arp_packet);
@@ -115,7 +115,7 @@ uint8_t *construct_arp_buff(unsigned char*ifacemac, uint32_t ifaceip, uint32_t d
             /* Ethenent type is ARP */
             Ethenet->ether_type = htons(ethertype_arp);  
             /* construct an APR header */
-            struct sr_arp_hdr* arp_header = (struct sr_arp_hdr*)(arp_packet + sizeof(sr_ethernet_hdr));
+            struct sr_arp_hdr* arp_header = (struct sr_arp_hdr*)(arp_packet + sizeof(struct sr_ethernet_hdr));
             arp_header->ar_hrd = htons(arp_hrd_ethernet);
             arp_header->ar_pro = htons(0x800);
             arp_header->ar_hln = 0x6;
@@ -131,8 +131,8 @@ uint8_t *construct_arp_buff(unsigned char*ifacemac, uint32_t ifaceip, uint32_t d
             Adest[4]= 0x00;
             Adest[5]= 0x00;
             memcpy(arp_header -> ar_tha, Adest, ETHER_ADDR_LEN );
-            arp.header->ar_sip = ifaceip;
-            arp.header->ar_tip = destip;
+            arp_header->ar_sip = ifaceip;
+            arp_header->ar_tip = destip;
             return arp_packet;
 }
 
