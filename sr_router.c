@@ -163,9 +163,9 @@ void sr_handle_arp_request(struct sr_instance* sr,
 
   // update arp header
   arp_hdr->ar_op = htons(arp_op_reply);
-  strncpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+  memcpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
   arp_hdr->ar_tip = arp_hdr->ar_sip;    
-  strncpy(arp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
+  memcpy(arp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
   arp_hdr->ar_sip = iface->ip;
 
   // update ethernet header
@@ -203,8 +203,8 @@ void sr_handle_arp_reply(struct sr_instance* sr,
       assert(iface);
       // update ethernet header
       ethernet_hdr = (sr_ethernet_hdr_t *)(pkt->buf);
-      strncpy(ethernet_hdr->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN);
-      strncpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);
+      memcpy(ethernet_hdr->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+      memcpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);
         
       // update ip header
       ip_hdr = (sr_ip_hdr *)(pkt->buf + sizeof(struct sr_ethernet_hdr));
@@ -324,8 +324,8 @@ void sr_handle_icmp_pkt(struct sr_instance* sr,
 
       // update ethernet header
       ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
-      strncpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
-      strncpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+      memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
+      memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
       // send icmp echo reply packet
       sr_send_packet(sr, sr_pkt, pkt_len, interface);
@@ -384,8 +384,8 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
 
   // update ethernet header
   ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
-  strncpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
-  strncpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+  memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
+  memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
   // send icmp packet
   sr_send_packet(sr, sr_pkt, pkt_len, interface);
@@ -446,8 +446,8 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
     if (arp_entry) {
       // update ethernet header
       ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
-      strncpy(ethernet_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN); 
-      strncpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN); 
+      memcpy(ethernet_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN); 
+      memcpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN); 
     
       // update ip header
       ip_hdr = (sr_ip_hdr *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
