@@ -58,6 +58,7 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
                 }
                 //send imcp to source addr
                 sr_icmp_dest_unreachable(sr, waitpacket->buff, wait_packet->len, ifacename, 3, 1);
+                free(waitpacket->buff);
             }
            // destory arp request in the queue
            sr_arpreq_destroy(sr->cache, request);
@@ -76,6 +77,7 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
             uint32_t destip = request->ip;
             uint8_t* arp_packet = construct_arp_buff(ifacemac, ifaceip, request); 
             sr_send_packet(sr, arp_packet, sizeof(struct sr_ethernet_hdr)+sizeof(struct sr_arp_hdr), iface);
+            free(arp_packet);
             request -> sent = now;
             request -> times_sent++;
         }
