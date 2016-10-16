@@ -102,7 +102,7 @@ uint8_t *construct_arp_buff(unsigned char*ifacemac, uint32_t ifaceip, uint32_t d
             /* construct an Ethenet header */
             struct sr_ethernet_hdr*Ethenet = (struct sr_ethernet_hdr*)arp_packet;
             /* destination Ethenet address is ff:ff:ff:ff:ff:ff */
-            unsigned char Edest[ETHER_ADDR_LEN];
+            uint8_t Edest[ETHER_ADDR_LEN];
             Edest[0] = 0xff;
             Edest[1] = 0xff;
             Edest[2] = 0xff;
