@@ -361,22 +361,23 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   uint8_t *sr_pkt = (uint8_t *)malloc(pkt_len);
   memcpy(sr_pkt, packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr));
 
-  ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
-  icmp_t3_hdr = (sr_icmp_t3_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr));
   // update icmp header
+  icmp_t3_hdr = (sr_icmp_t3_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr) + 
+    sizeof(struct sr_ip_hdr));
   icmp_t3_hdr->icmp_type = icmp_type;
   icmp_t3_hdr->icmp_code = icmp_code;
   bzero(&(icmp_t3_hdr->icmp_sum), 2);
   bzero(&(icmp_t3_hdr->unused), 2);
   bzero(&(icmp_t3_hdr->next_mtu), 2);
-  memcpy(icmp_t3_hdr->data, ip_hdr, ICMP_DATA_SIZE);
+  memcpy(icmp_t3_hdr->data, sr_pkt + sizeof(struct sr_ethernet_hdr), ICMP_DATA_SIZE);
   uint16_t icmp_cksum = cksum(icmp_t3_hdr, sizeof(struct sr_icmp_t3_hdr));
   icmp_t3_hdr->icmp_sum = icmp_cksum;
 
-  //update ip header  
+  //update ip header 
+  ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr)); 
   ip_hdr->ip_dst = ip_hdr->ip_src;
   ip_hdr->ip_src = iface->ip;
-  ip_hdr->ip_ttl--;
+  ip_hdr->ip_ttl = 0xff;
   ip_hdr->ip_p = ip_protocol_icmp;
   bzero(&(ip_hdr->ip_sum), 2);
   uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
