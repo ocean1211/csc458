@@ -95,27 +95,42 @@ construct an ARP buffer
 */
 uint8_t *construct_arp_buff(unsigned char*ifacemac, uint32_t ifaceip, struct sr_arpreq* request){
     
-            //construct ARP buffer
+            //construct ARP packet
             uint8_t *arp_packet = malloc(sizeof(struct sr_ethernet_hdr)+sizeof(struct sr_arp_hdr));
             //construct an Ethenet header
             struct sr_ethernet_hdr*Ethenet = (struct sr_ethernet_hdr*)arp_packet;
-            // destination Ethenet address is ffffff
-            memcpy(Ethenet->ether_dhost, "ffffff", ETHER_ADDR_LEN) ;
+            // destination Ethenet address is ff:ff:ff:ff:ff:ff
+            unsigned char Edest[ETHER_ADDR_LEN];
+            Edest[0] = 0xff;
+            Edest[1] = 0xff;
+            Edest[2] = 0xff;
+            Edest[3] = 0xff;
+            Edest[4] = 0xff;
+            Edest[5] = 0xff;
+            memcpy(Ethenet->ether_dhost, Edest, ETHER_ADDR_LEN);
             // source Ethenet address
             memcpy(Ethenet->ether_shost, ifacemac, ETHER_ADDR_LEN);
             // Ethenent type is ARP
-            Ethenet->ether_type = ethertype_arp;  
+            Ethenet->ether_type = htons(ethertype_arp);  
             // construct an APR header
             struct sr_arp_hdr* arp_header = (struct sr_arp_hdr*)(arp_packet + sizeof(sr_ethernet_hdr));
-            arp_header -> ar_hrd =arp_hrd_ethernet;
-            arp_header -> ar_pro = 0x800;
-            arp_header -> ar_hln = 6;
-            arp_header -> ar_pln = 4;
-            arp_header -> ar_op = arp_op_request;
+            arp_header->ar_hrd = htons(arp_hrd_ethernet);
+            arp_header->ar_pro = htons(0x800);
+            arp_header->ar_hln = 0x6;
+            arp_header->ar_pln = 0x4;
+            arp_header->ar_op = htons(arp_op_request);
             memcpy(arp_header -> ar_sha, Ethenet->ether_shost, ETHER_ADDR_LEN);
-            memcpy(arp_header -> ar_tha, '000000', ETHER_ADDR_LEN );
-            arp.header->ar_sip = ifaceip ;
-            arp.header->ar_tip = destip ;
+            unsigned char Adest[ETHER_ADDR_LEN];
+            // destination Ethenet address is 00:00:00:00:00:00
+            Adest[0]= 0x00;
+            Adest[1]= 0x00;
+            Adest[2]= 0x00;
+            Adest[3]= 0x00;
+            Adest[4]= 0x00;
+            Adest[5]= 0x00;
+            memcpy(arp_header -> ar_tha, Adest, ETHER_ADDR_LEN );
+            arp.header->ar_sip = ifaceip;
+            arp.header->ar_tip = destip;
 
             return arp_packet;
 
