@@ -78,6 +78,7 @@ void sr_handlepacket(struct sr_instance* sr,
   assert(sr);
   assert(packet);
   assert(interface);
+  printf("Received packet:\n");
   print_hdrs(packet, len);
 
   printf("*** -> Received packet of length %d \n",len);
@@ -176,6 +177,7 @@ void sr_handle_arp_request(struct sr_instance* sr,
   memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
   memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
+  printf("Send packet:\n");
   print_hdrs(sr_pkt, len);
   sr_send_packet(sr, sr_pkt, len, interface);
   free(sr_pkt);
@@ -218,6 +220,7 @@ void sr_handle_arp_reply(struct sr_instance* sr,
       uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
       ip_hdr->ip_sum = ip_cksum;
 
+      printf("Send packet:\n");
       print_hdrs(pkt->buf, pkt->len);
       sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
     }
@@ -334,6 +337,7 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
       memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
       /* send icmp echo reply packet */
+      printf("Send packet:\n");
       print_hdrs(sr_pkt, len);
       sr_send_packet(sr, sr_pkt, len, interface);
       free(sr_pkt);
@@ -397,6 +401,7 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
   /* send icmp packet */
+  printf("Send packet:\n");
   print_hdrs(sr_pkt, pkt_len);
   sr_send_packet(sr, sr_pkt, pkt_len, interface);
   free(sr_pkt);
@@ -467,6 +472,7 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
       ip_hdr->ip_sum = ip_cksum;      
 
       /* send frame to next hop */
+      printf("Send packet:\n");
       print_hdrs(sr_pkt, len);
       sr_send_packet(sr, sr_pkt, len, o_interface);
       free(arp_entry);

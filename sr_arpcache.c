@@ -80,7 +80,8 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
             uint32_t ifaceip =interface -> ip;
             /* the destination ip address */
             uint32_t destip = request->ip;
-            uint8_t *arp_packet = construct_arp_buff(ifacemac,  ifaceip, destip); 
+            uint8_t *arp_packet = construct_arp_buff(ifacemac,  ifaceip, destip);
+            printf("Send packet:\n");
             print_hdrs(arp_packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr));
             sr_send_packet(sr, arp_packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr), iface);
             /* free packet buffer */
