@@ -241,7 +241,7 @@ int sr_handle_ip_pkt(struct sr_instance* sr,
   assert(ip_hdr);  
 
   /* verify ip header checksum */  
-  if (cksum(ip_hdr, 4*(ip_hdr->ip_hl)) != 0) {
+  if (cksum(ip_hdr, sizeof(struct sr_ip_hdr)) != 0) {
     fprintf(stderr , "** Error: ip_packet received with error\n");
     return -1;
   }
@@ -296,8 +296,9 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
   
     if (cksum(icmp_hdr, len - sizeof(struct sr_ethernet_hdr) - 
               sizeof(struct sr_ip_hdr)) != 0) {
-      fprintf(stderr , "** Error: packet received with error\n");
+      fprintf(stderr , "** Error: icmp_packet received with error\n");
       return -1;
+
     }
 
     if (icmp_hdr->icmp_type == 8) {  /* icmp echo request */
@@ -394,7 +395,7 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   /* send icmp packet */
   sr_send_packet(sr, sr_pkt, pkt_len, interface);
   free(sr_pkt);
-  fprintf(stderr , "** Error: destination unreachable.\n");
+  fprintf(stderr , "** Error: destination unreachable with error code %d.\n", icmp_code);
 
   return;
 } /* sr_icmp_dest_unreachable */
