@@ -242,7 +242,7 @@ int sr_handle_ip_pkt(struct sr_instance* sr,
 
   /* verify ip header checksum */  
   if (cksum(ip_hdr, 4*(ip_hdr->ip_hl)) != 0) {
-    fprintf(stderr , "** Error: packet received with error\n");
+    fprintf(stderr , "** Error: ip_packet received with error\n");
     return -1;
   }
 
