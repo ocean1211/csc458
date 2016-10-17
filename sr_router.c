@@ -14,8 +14,8 @@
 
 #include <stdio.h>
 #include <assert.h>
-
-
+#include <stdlib.h>
+#include <string.h>
 #include "sr_if.h"
 #include "sr_rt.h"
 #include "sr_router.h"
@@ -157,8 +157,8 @@ void sr_handle_arp_request(struct sr_instance* sr,
   sr_pkt = (uint8_t *)malloc(len);
   memcpy(sr_pkt, packet, len);  
 
-  ethernet_hdr = (sr_ethernet_hdr *)sr_pkt;
-  arp_hdr = (sr_arp_hdr *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
+  ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
+  arp_hdr = (sr_arp_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
   assert(ethernet_hdr);
   assert(arp_hdr);
 
@@ -186,7 +186,7 @@ void sr_handle_arp_reply(struct sr_instance* sr,
         char* interface) 
 {  
   sr_arp_hdr_t *arp_hdr;  
-  arp_hdr = (sr_arp_hdr *)(packet + sizeof(struct sr_ethernet_hdr));
+  arp_hdr = (sr_arp_hdr_t *)(packet + sizeof(struct sr_ethernet_hdr));
   assert(arp_hdr);  
 
   /* cache the arp reply */
@@ -196,19 +196,19 @@ void sr_handle_arp_reply(struct sr_instance* sr,
   /* forward packets waiting on this arp reply */
   if (req) {
     sr_ethernet_hdr_t *ethernet_hdr;
-    sr_ip_hdr_t ip_hdr;
+    sr_ip_hdr_t* ip_hdr;
     struct sr_if* o_iface; /* outgoing interface */
     struct sr_packet *pkt;   
     for (pkt = req->packets; pkt; pkt = pkt->next) {
       o_iface = sr_get_interface(sr, pkt->iface);
-      assert(iface);
+      assert(o_iface);
       /* update ethernet header */
       ethernet_hdr = (sr_ethernet_hdr_t *)(pkt->buf);
       memcpy(ethernet_hdr->ether_dhost, arp_hdr->ar_sha, ETHER_ADDR_LEN);
       memcpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);
         
       /* update ip header */
-      ip_hdr = (sr_ip_hdr *)(pkt->buf + sizeof(struct sr_ethernet_hdr));
+      ip_hdr = (sr_ip_hdr_t *)(pkt->buf + sizeof(struct sr_ethernet_hdr));
       ip_hdr->ip_ttl--;
       bzero(&(ip_hdr->ip_sum), 2);
       uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
@@ -217,7 +217,7 @@ void sr_handle_arp_reply(struct sr_instance* sr,
       sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
     }
 
-    sr_arpreq_destroy(sr->cache, req);
+    sr_arpreq_destroy(&(sr->cache), req);
   }
   
   return;
@@ -235,7 +235,7 @@ int sr_handle_ip_pkt(struct sr_instance* sr,
   }
 
   sr_ip_hdr_t *ip_hdr;
-  ip_hdr = (sr_ip_hdr *)(packet + sizeof(struct sr_ethernet_hdr));
+  ip_hdr = (sr_ip_hdr_t *)(packet + sizeof(struct sr_ethernet_hdr));
   assert(ip_hdr);  
 
   /* verify ip header checksum */  
@@ -252,7 +252,7 @@ int sr_handle_ip_pkt(struct sr_instance* sr,
     sr_handle_icmp_pkt(sr, packet, len, interface);
   }
   /* if it is not for me and its ttl greater than 1 */
-  else if (ip_hdr->ttl > 1) {
+  else if (ip_hdr->ip_ttl > 1) {
     sr_forward_ip_pkt(sr, packet, len, interface);
   }
   /* if it is not for me and ttl equal or less than 1,
