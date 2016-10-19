@@ -429,28 +429,17 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
   uint32_t ip_dest;
   ip_dest = ip_hdr->ip_dst;
 
-  uint32_t gateway = 0;  /* next hop ip addr */
-  uint32_t mask = 0;
-  char o_interface[sr_IFACE_NAMELEN];   /* outgoing interface */    
   /* lookup the longest prefix match */
-  struct sr_rt *rt;
-  for (rt = sr->routing_table; rt != NULL; rt = rt->next) {
-    if (((ip_dest & rt->mask.s_addr) == rt->dest.s_addr) && 
-        (rt->mask.s_addr > mask)) {
-      gateway = rt->gw.s_addr;
-      mask = rt->mask.s_addr;
-      strncpy(o_interface, rt->interface, sr_IFACE_NAMELEN);
-    }
-  }
+   struct sr_rt *rtable = sr_longest_prefix_match(sr, ip_dest);
 
   /* if no match, icmp net unreachable */
-  if (! gateway) {
+  if (! rtable->gw.s_addr) {
     sr_icmp_dest_unreachable(sr, packet, len, interface, 3, 0);
     return;
   }
   /* match */
-  else {  
-    struct sr_if* o_iface = sr_get_interface(sr, o_interface);
+  else {   
+    struct sr_if* o_iface = sr_get_interface(sr, rtable->interface);
     assert(o_iface);
 
     /* make a copy of the packet */
@@ -459,7 +448,7 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
 
     /* check arp cache for next hop mac */
     struct sr_arpentry *arp_entry; 
-    arp_entry = sr_arpcache_lookup(&(sr->cache), gateway);
+    arp_entry = sr_arpcache_lookup(&(sr->cache), rtable->gw.s_addr);
 
     /*arp cache hit */
     if (arp_entry) {
@@ -478,17 +467,39 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
       /* send frame to next hop */
       printf("Send packet:\n");
       print_hdrs(sr_pkt, len);
-      sr_send_packet(sr, sr_pkt, len, o_interface);
+      sr_send_packet(sr, sr_pkt, len, rtable->interface);
       free(arp_entry);
     }    
     /* arp miss */
     else {
-      sr_arpcache_queuereq(&(sr->cache), gateway, packet, len, o_interface);
+      sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, packet, len, rtable->interface);
     }
     free(sr_pkt);
+    free(rtable);
   }
 
   return;
 } /* end sr_forward_ip_pkt */
+
+/* Longest prefix match */
+struct sr_rt *sr_longest_prefix_match(struct sr_instance* sr, uint32_t ip)
+{
+  assert(sr);
+  assert(ip);
+  struct sr_rt *rtable = (struct sr_rt *)malloc(sizeof(struct sr_rt));
+  rtable->gw.s_addr = 0;
+  rtable->mask.s_addr = 0;
+
+  struct sr_rt *rt;
+  for (rt = sr->routing_table; rt != NULL; rt = rt->next) {
+    if (((ip & rt->mask.s_addr) == rt->dest.s_addr) && 
+        (rt->mask.s_addr > rtable->mask.s_addr)) {
+      memcpy(rtable, rt, sizeof(struct sr_rt));      
+    }
+  }
+
+  return rtable;
+} /* end sr_longest_prefix_match */
+
 
 
