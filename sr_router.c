@@ -385,7 +385,7 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   bzero(&(icmp_t3_hdr->icmp_sum), 2);
   bzero(&(icmp_t3_hdr->unused), 2);
   bzero(&(icmp_t3_hdr->next_mtu), 2);
-  memcpy(icmp_t3_hdr->data, sr_pkt + sizeof(struct sr_ethernet_hdr), ICMP_DATA_SIZE);
+  memcpy(icmp_t3_hdr->data, packet + sizeof(struct sr_ethernet_hdr), ICMP_DATA_SIZE);
   uint16_t icmp_cksum = cksum(icmp_t3_hdr, sizeof(struct sr_icmp_t3_hdr));
   icmp_t3_hdr->icmp_sum = icmp_cksum;
 
