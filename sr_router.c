@@ -256,7 +256,7 @@ int sr_handle_ip_pkt(struct sr_instance* sr,
     return -1;
   }
 
-  struct sr_if* iface = sr_get_interface(sr, interface);  
+  struct sr_if* iface = sr_get_interface(sr, interface);
   assert(iface);
 
   /* if the ip packet is for me */
@@ -326,25 +326,47 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
               sizeof(struct sr_ip_hdr));
       icmp_hdr->icmp_sum = icmp_cksum;
 
+      
+
+
       /*update ip header */
       ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
       ip_hdr->ip_dst = ip_hdr->ip_src;
-      ip_hdr->ip_src = iface->ip;
-      ip_hdr->ip_ttl = 0xff;
-      bzero(&(ip_hdr->ip_sum), 2);  
-      uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
-      ip_hdr->ip_sum = ip_cksum;
+      /* LPM */
+      struct sr_rt *rtable;
+      rtable = sr_longest_prefix_match(sr, ip_hdr->ip_dst);
+      if (rtable->gw.s_addr) {
+        struct sr_if *o_iface = sr_get_interface(sr, rtable->interface);
+        ip_hdr->ip_src = o_iface->ip;
+        ip_hdr->ip_ttl = 0xff;
+        bzero(&(ip_hdr->ip_sum), 2);
+        uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+        ip_hdr->ip_sum = ip_cksum;
 
-      /* update ethernet header */
-      ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
-      memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
-      memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+        /* check arp cache for next hop mac */
+        struct sr_arpentry *arp_entry; 
+        arp_entry = sr_arpcache_lookup(&(sr->cache), rtable->gw.s_addr);
 
-      /* send icmp echo reply packet */
-      printf("Send packet:\n");
-      print_hdrs(sr_pkt, len);
-      sr_send_packet(sr, sr_pkt, len, interface);
-      free(sr_pkt);
+        /*arp cache hit */
+        if (arp_entry) {
+          /* update ethernet header */
+          ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
+          memcpy(ethernet_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN); 
+          memcpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);         
+
+          /* send icmp echo reply packet */
+          printf("Send packet:\n");
+          print_hdrs(sr_pkt, len);
+          sr_send_packet(sr, sr_pkt, len, rtable->interface);
+          free(sr_pkt);
+        }
+
+        /* arp miss */
+        else {
+          sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, packet, len, rtable->interface);
+        }      
+      }     
+      
     }
   } 
   else if ((len > (sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr))) &&
