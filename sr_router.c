@@ -411,7 +411,14 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   icmp_t3_hdr->icmp_sum = icmp_cksum;
 
   /* update ip header */ 
-  ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr)); 
+  ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
+
+  struct sr_if* my_iface; 
+  for (my_iface = sr->if_list; my_iface != NULL; my_iface = my_iface->next){
+    if (my_iface->ip == ip_hdr->ip_src){
+      return;
+    }
+  }
   ip_hdr->ip_dst = ip_hdr->ip_src;
 
   /* LPM */
@@ -447,10 +454,10 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
     else {
       uint8_t *arp_packet = construct_arp_buff(o_iface->addr,  o_iface->ip, rtable->gw.s_addr);
       sr_send_packet(sr, arp_packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr), rtable->interface);
-      sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, packet, len, rtable->interface);
+      sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, sr_pkt, len, rtable->interface);
     }      
   }
-  
+
   free(sr_pkt);
   fprintf(stderr , "** Error: destination unreachable with error code %d.\n", icmp_code);
 
