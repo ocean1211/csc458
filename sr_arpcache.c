@@ -49,21 +49,14 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
 
             /*handle each sr packet */
             for(wait_packet=request->packets; wait_packet != NULL; wait_packet = wait_packet ->next){
-                /*get Ethernet header from raw Ethernet*/
+                /*get ip header from raw Ethernet*/
              
                 struct sr_ip_hdr* ip_header = (struct sr_ip_hdr*)(wait_packet->buf+ sizeof( struct sr_ethernet_hdr));
                 uint32_t ip_dest = ip_header -> ip_src;
 		
-                /*go through interface list, get the inteface name by MAC address */
+                /*go through interface list, find outer inteface with ip address by longest prefix match */
                 struct sr_rt* rtable = sr_longest_prefix_match(sr, ip_dest);
                
-                /*
-                for(list=sr->if_list; list!=NULL; list=list->next){
-                    if(memcmp(list->addr, ifacemac, ETHER_ADDR_LEN))
-                        memcpy(ifacename, list->name, sr_IFACE_NAMELEN);
-                        break;
-                }
-                */
                 /*send imcp to source addr */
                 sr_icmp_dest_unreachable(sr, wait_packet->buf, wait_packet->len, rtable->interface, 3, 1);
 
