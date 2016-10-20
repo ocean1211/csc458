@@ -10,7 +10,7 @@
 #include "sr_router.h"
 #include "sr_if.h"
 #include "sr_protocol.h"
-
+#include "sr_rt.h"
 #include <string.h>
 
 #include "sr_utils.h"
@@ -39,37 +39,38 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
     /*get the difference between curren time and time that last time arp request was sent */
     double diff = difftime(now, request->sent);
     /*handle arp request */
-    if(diff > 1.0) {
+     if(diff >= 1.0) {
         /*arp request has been sent for 5 times, send icmp host */
         /*unreachable and destory arp request */
         if(request->times_sent >= 5){
             /*send icmp host unreachable to source addr of all pkts waiting */
             struct sr_packet* wait_packet ;
-            struct sr_if* list ;
+
             /*handle each sr packet */
             for(wait_packet=request->packets; wait_packet != NULL; wait_packet = wait_packet ->next){
                 /*get Ethernet header from raw Ethernet*/
-                struct sr_ethernet_hdr* Ethenet =  (struct sr_ethernet_hdr*)(wait_packet->buf);
-                unsigned char *ifacemac = malloc(ETHER_ADDR_LEN*sizeof(unsigned char));
-                /*get the destination MAC address*/
-                memcpy(ifacemac , Ethenet->ether_dhost, ETHER_ADDR_LEN);
-                char *ifacename = malloc(sr_IFACE_NAMELEN * sizeof(char));
+             
+                struct sr_ip_hdr* ip_header = (struct sr_ip_hdr*)(wait_packet->buf+ sizeof( struct sr_ethernet_hdr));
+                uint32_t ip_dest = ip_header -> ip_src;
                 /*go through interface list, get the inteface name by MAC address */
-                for(list=sr-> if_list; list!=NULL; list=list->next){
+                struct sr_rt* rtable = sr_longest_prefix_match(sr, ip_dest);
+               
+                /*
+                for(list=sr->if_list; list!=NULL; list=list->next){
                     if(memcmp(list->addr, ifacemac, ETHER_ADDR_LEN))
                         memcpy(ifacename, list->name, sr_IFACE_NAMELEN);
                         break;
                 }
+                */
                 /*send imcp to source addr */
-                sr_icmp_dest_unreachable(sr, wait_packet->buf, wait_packet->len, ifacename, 3, 1);
+                sr_icmp_dest_unreachable(sr, wait_packet->buf, wait_packet->len, rtable->interface, 3, 1);
 
-                /*free buffer */
-                free(ifacemac);
-                free(ifacename);
+             
             }
            /* destory arp request in the queue */
            sr_arpreq_destroy(&(sr->cache), request);
         }
+        
         /* increment on field request->sent and update request->times_sent */
         else{
             /*
