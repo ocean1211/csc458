@@ -221,7 +221,7 @@ void sr_handle_arp_reply(struct sr_instance* sr,
 
       ip_hdr->ip_ttl--;
       bzero(&(ip_hdr->ip_sum), 2);
-      uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+      uint16_t ip_cksum = cksum(ip_hdr, sizeof(struct sr_ip_hdr));
       ip_hdr->ip_sum = ip_cksum;
 
       printf("Send packet:\n");
@@ -260,11 +260,22 @@ int sr_handle_ip_pkt(struct sr_instance* sr,
   assert(iface);
 
   /* if the ip packet is for me */
+  struct sr_if *my_iface;
+  for (my_iface = sr->if_list; my_iface != NULL; my_iface = my_iface->next){
+    if (ip_hdr->ip_dst == my_iface->ip) {
+      sr_handle_icmp_pkt(sr, packet, len, interface);
+      return 0;
+    }
+  }
+
+  /*
   if (ip_hdr->ip_dst == iface->ip) {
     sr_handle_icmp_pkt(sr, packet, len, interface);
   }
+  */
+
   /* if it is not for me and its ttl greater than 1 */
-  else if (ip_hdr->ip_ttl > 1) {
+  if (ip_hdr->ip_ttl > 1) {
     sr_forward_ip_pkt(sr, packet, len, interface);
   }
   /* if it is not for me and ttl equal or less than 1,
@@ -366,14 +377,15 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
         }      
       }
 
-      free(sr_pkt);      
+      free(sr_pkt);
     }
   } 
+  
   else if ((len > (sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr))) &&
-    ((ip_hdr->ip_p == 0x0006) || (ip_hdr->ip_p == 0x0011))) {
+    ((ip_hdr->ip_p == 0x0006) || (ip_hdr->ip_p == 0x0011))) {  
     /* icmp port unreachable */
     sr_icmp_dest_unreachable(sr, packet, len, interface, 3, 3);
-  }
+  }  
 
   return 0;
 } /* end sr_handle_icmp_pkt */
@@ -414,7 +426,6 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   /* update ip header */ 
   ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
 
-
   /* Drop packet if ip_src is me */
   struct sr_if *my_iface;
   for (my_iface = sr->if_list; my_iface != NULL; my_iface = my_iface->next){
@@ -422,7 +433,6 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
       return;
     }
   }
-
 
   ip_hdr->ip_dst = ip_hdr->ip_src;
   ip_hdr->ip_src = iface->ip;
