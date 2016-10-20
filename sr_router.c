@@ -305,7 +305,7 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
         sizeof(struct sr_ip_hdr));      
   
     if (cksum(icmp_hdr, len - sizeof(struct sr_ethernet_hdr) - 
-              sizeof(struct sr_ip_hdr)) != 0) {
+              sizeof(struct sr_ip_hdr)) != 0xffff) {
       fprintf(stderr , "** Error: icmp_packet received with error\n");
       return -1;
 
@@ -325,9 +325,6 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
       icmp_cksum = cksum(icmp_hdr, len - sizeof(struct sr_ethernet_hdr) - 
               sizeof(struct sr_ip_hdr));
       icmp_hdr->icmp_sum = icmp_cksum;
-
-      
-
 
       /*update ip header */
       ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
@@ -358,15 +355,17 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
           printf("Send packet:\n");
           print_hdrs(sr_pkt, len);
           sr_send_packet(sr, sr_pkt, len, rtable->interface);
-          free(sr_pkt);
         }
 
         /* arp miss */
         else {
+          uint8_t *arp_packet = construct_arp_buff(o_iface->addr,  o_iface->ip, rtable->gw.s_addr);
+          sr_send_packet(sr, arp_packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr), rtable->interface);
           sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, packet, len, rtable->interface);
         }      
-      }     
-      
+      }
+
+      free(sr_pkt);      
     }
   } 
   else if ((len > (sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr))) &&
