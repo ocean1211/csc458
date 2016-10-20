@@ -339,13 +339,16 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
 
       /*update ip header */
       ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
+      
+      uint32_t reply_src;
+      reply_src = ip_hdr->ip_dst;
       ip_hdr->ip_dst = ip_hdr->ip_src;
+      ip_hdr->ip_src = reply_src;
       /* LPM */
       struct sr_rt *rtable;
       rtable = sr_longest_prefix_match(sr, ip_hdr->ip_dst);
       if (rtable->gw.s_addr) {
         struct sr_if *o_iface = sr_get_interface(sr, rtable->interface);
-        ip_hdr->ip_src = o_iface->ip;
         ip_hdr->ip_p = ip_protocol_icmp;
         ip_hdr->ip_ttl = 0xff;
         bzero(&(ip_hdr->ip_sum), 2);
@@ -433,9 +436,17 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
       return;
     }
   }
-
-  ip_hdr->ip_dst = ip_hdr->ip_src;
-  ip_hdr->ip_src = iface->ip;
+  
+  if (icmp_code == 3){
+    uint32_t reply_src;
+    reply_src = ip_hdr->ip_dst;
+    ip_hdr->ip_dst = ip_hdr->ip_src;
+    ip_hdr->ip_src = reply_src;
+  }
+  else{
+    ip_hdr->ip_dst = ip_hdr->ip_src;
+    ip_hdr->ip_src = iface->ip;
+  }
   ip_hdr->ip_ttl = 0xff;
   ip_hdr->ip_p = ip_protocol_icmp;
   bzero(&(ip_hdr->ip_sum), 2);

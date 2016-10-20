@@ -53,6 +53,7 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
              
                 struct sr_ip_hdr* ip_header = (struct sr_ip_hdr*)(wait_packet->buf+ sizeof( struct sr_ethernet_hdr));
                 uint32_t ip_dest = ip_header -> ip_src;
+		
                 /*go through interface list, get the inteface name by MAC address */
                 struct sr_rt* rtable = sr_longest_prefix_match(sr, ip_dest);
                
