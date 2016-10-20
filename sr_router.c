@@ -335,6 +335,7 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
       if (rtable->gw.s_addr) {
         struct sr_if *o_iface = sr_get_interface(sr, rtable->interface);
         ip_hdr->ip_src = o_iface->ip;
+        ip_hdr->ip_p = ip_protocol_icmp;
         ip_hdr->ip_ttl = 0xff;
         bzero(&(ip_hdr->ip_sum), 2);
         uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
