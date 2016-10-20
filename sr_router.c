@@ -152,11 +152,8 @@ void sr_handle_arp_request(struct sr_instance* sr,
 {
   sr_ethernet_hdr_t *ethernet_hdr;
   sr_arp_hdr_t *arp_hdr;
-  struct sr_if* iface;
   uint8_t *sr_pkt;
 
-  iface = sr_get_interface(sr, interface);
-  assert(iface);
   /* make a copy of the packet */
   sr_pkt = (uint8_t *)malloc(len);
   memcpy(sr_pkt, packet, len);  
@@ -166,20 +163,44 @@ void sr_handle_arp_request(struct sr_instance* sr,
   assert(ethernet_hdr);
   assert(arp_hdr);
 
-  /* update arp header */
-  arp_hdr->ar_op = htons(arp_op_reply);
-  memcpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
-  arp_hdr->ar_tip = arp_hdr->ar_sip;    
-  memcpy(arp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
-  arp_hdr->ar_sip = iface->ip;
+  /* LPM */
+  struct sr_rt *rtable;
+  rtable = sr_longest_prefix_match(sr, arp_hdr->ar_sip);
 
-  /* update ethernet header */
-  memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
-  memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+  if (rtable->gw.s_addr) {
+    struct sr_if *o_iface = sr_get_interface(sr, rtable->interface);
+    arp_hdr->ar_sip = o_iface->ip;     
 
-  printf("Send packet:\n");
-  print_hdrs(sr_pkt, len);
-  sr_send_packet(sr, sr_pkt, len, interface);
+    /* update arp header */
+    arp_hdr->ar_op = htons(arp_op_reply);
+    memcpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+    arp_hdr->ar_tip = arp_hdr->ar_sip;    
+    memcpy(arp_hdr->ar_sha, o_iface->addr, ETHER_ADDR_LEN);
+    arp_hdr->ar_sip = o_iface->ip;
+
+    /* check arp cache for next hop mac */
+    struct sr_arpentry *arp_entry;
+    arp_entry = sr_arpcache_lookup(&(sr->cache), rtable->gw.s_addr);
+
+    /*arp cache hit */
+    if (arp_entry) {
+      /* update ethernet header */
+      memcpy(ethernet_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN); 
+      memcpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);         
+
+      /* send arp request reply packet */
+      printf("Send packet:\n");
+      print_hdrs(sr_pkt, len);
+      sr_send_packet(sr, sr_pkt, len, rtable->interface);
+    }
+
+    /* arp miss */
+    else {
+      uint8_t *arp_packet = construct_arp_buff(o_iface->addr,  o_iface->ip, rtable->gw.s_addr);
+      sr_send_packet(sr, arp_packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr), rtable->interface);
+      sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, packet, len, rtable->interface);
+    }
+  }    
   free(sr_pkt);
 
   return;
