@@ -413,22 +413,44 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   /* update ip header */ 
   ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr)); 
   ip_hdr->ip_dst = ip_hdr->ip_src;
-  ip_hdr->ip_src = iface->ip;
-  ip_hdr->ip_ttl = 0xff;
-  ip_hdr->ip_p = ip_protocol_icmp;
-  bzero(&(ip_hdr->ip_sum), 2);
-  uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
-  ip_hdr->ip_sum = ip_cksum;
 
-  /* update ethernet header */
-  ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
-  memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
-  memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+  /* LPM */
+  struct sr_rt *rtable;
+  rtable = sr_longest_prefix_match(sr, ip_hdr->ip_dst);
+  if (rtable->gw.s_addr) {
+    struct sr_if *o_iface = sr_get_interface(sr, rtable->interface);
+    ip_hdr->ip_src = o_iface->ip;
+    ip_hdr->ip_ttl = 0xff;
+    ip_hdr->ip_p = ip_protocol_icmp;
+    bzero(&(ip_hdr->ip_sum), 2);
+    uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+    ip_hdr->ip_sum = ip_cksum;
 
-  /* send icmp packet */
-  printf("Send packet:\n");
-  print_hdrs(sr_pkt, pkt_len);
-  sr_send_packet(sr, sr_pkt, pkt_len, interface);
+    /* check arp cache for next hop mac */
+    struct sr_arpentry *arp_entry; 
+    arp_entry = sr_arpcache_lookup(&(sr->cache), rtable->gw.s_addr);
+
+    /*arp cache hit */
+    if (arp_entry) {
+      /* update ethernet header */
+      ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
+      memcpy(ethernet_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN); 
+      memcpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);         
+
+      /* send icmp echo reply packet */
+      printf("Send packet:\n");
+      print_hdrs(sr_pkt, len);
+      sr_send_packet(sr, sr_pkt, pkt_len, rtable->interface);
+    }
+
+    /* arp miss */
+    else {
+      uint8_t *arp_packet = construct_arp_buff(o_iface->addr,  o_iface->ip, rtable->gw.s_addr);
+      sr_send_packet(sr, arp_packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr), rtable->interface);
+      sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, packet, len, rtable->interface);
+    }      
+  }
+  
   free(sr_pkt);
   fprintf(stderr , "** Error: destination unreachable with error code %d.\n", icmp_code);
 
