@@ -152,8 +152,11 @@ void sr_handle_arp_request(struct sr_instance* sr,
 {
   sr_ethernet_hdr_t *ethernet_hdr;
   sr_arp_hdr_t *arp_hdr;
+  struct sr_if* iface;
   uint8_t *sr_pkt;
 
+  iface = sr_get_interface(sr, interface);
+  assert(iface);
   /* make a copy of the packet */
   sr_pkt = (uint8_t *)malloc(len);
   memcpy(sr_pkt, packet, len);  
@@ -163,44 +166,20 @@ void sr_handle_arp_request(struct sr_instance* sr,
   assert(ethernet_hdr);
   assert(arp_hdr);
 
-  /* LPM */
-  struct sr_rt *rtable;
-  rtable = sr_longest_prefix_match(sr, arp_hdr->ar_sip);
+  /* update arp header */
+  arp_hdr->ar_op = htons(arp_op_reply);
+  memcpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+  arp_hdr->ar_tip = arp_hdr->ar_sip;    
+  memcpy(arp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
+  arp_hdr->ar_sip = iface->ip;
 
-  if (rtable->gw.s_addr) {
-    struct sr_if *o_iface = sr_get_interface(sr, rtable->interface);
-    arp_hdr->ar_sip = o_iface->ip;     
+  /* update ethernet header */
+  memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
+  memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
-    /* update arp header */
-    arp_hdr->ar_op = htons(arp_op_reply);
-    memcpy(arp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
-    arp_hdr->ar_tip = arp_hdr->ar_sip;    
-    memcpy(arp_hdr->ar_sha, o_iface->addr, ETHER_ADDR_LEN);
-    arp_hdr->ar_sip = o_iface->ip;
-
-    /* check arp cache for next hop mac */
-    struct sr_arpentry *arp_entry;
-    arp_entry = sr_arpcache_lookup(&(sr->cache), rtable->gw.s_addr);
-
-    /*arp cache hit */
-    if (arp_entry) {
-      /* update ethernet header */
-      memcpy(ethernet_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN); 
-      memcpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);         
-
-      /* send arp request reply packet */
-      printf("Send packet:\n");
-      print_hdrs(sr_pkt, len);
-      sr_send_packet(sr, sr_pkt, len, rtable->interface);
-    }
-
-    /* arp miss */
-    else {
-      uint8_t *arp_packet = construct_arp_buff(o_iface->addr,  o_iface->ip, rtable->gw.s_addr);
-      sr_send_packet(sr, arp_packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr), rtable->interface);
-      sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, packet, len, rtable->interface);
-    }
-  }    
+  printf("Send packet:\n");
+  print_hdrs(sr_pkt, len);
+  sr_send_packet(sr, sr_pkt, len, interface);
   free(sr_pkt);
 
   return;
@@ -432,53 +411,24 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   icmp_t3_hdr->icmp_sum = icmp_cksum;
 
   /* update ip header */ 
-  ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
-
-  struct sr_if* my_iface; 
-  for (my_iface = sr->if_list; my_iface != NULL; my_iface = my_iface->next){
-    if (my_iface->ip == ip_hdr->ip_src){
-      return;
-    }
-  }
+  ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr)); 
   ip_hdr->ip_dst = ip_hdr->ip_src;
+  ip_hdr->ip_src = iface->ip;
+  ip_hdr->ip_ttl = 0xff;
+  ip_hdr->ip_p = ip_protocol_icmp;
+  bzero(&(ip_hdr->ip_sum), 2);
+  uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+  ip_hdr->ip_sum = ip_cksum;
 
-  /* LPM */
-  struct sr_rt *rtable;
-  rtable = sr_longest_prefix_match(sr, ip_hdr->ip_dst);
-  if (rtable->gw.s_addr) {
-    struct sr_if *o_iface = sr_get_interface(sr, rtable->interface);
-    ip_hdr->ip_src = o_iface->ip;
-    ip_hdr->ip_ttl = 0xff;
-    ip_hdr->ip_p = ip_protocol_icmp;
-    bzero(&(ip_hdr->ip_sum), 2);
-    uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
-    ip_hdr->ip_sum = ip_cksum;
+  /* update ethernet header */
+  ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
+  memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
+  memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
-    /* check arp cache for next hop mac */
-    struct sr_arpentry *arp_entry; 
-    arp_entry = sr_arpcache_lookup(&(sr->cache), rtable->gw.s_addr);
-
-    /*arp cache hit */
-    if (arp_entry) {
-      /* update ethernet header */
-      ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
-      memcpy(ethernet_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN); 
-      memcpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);         
-
-      /* send icmp echo reply packet */
-      printf("Send packet:\n");
-      print_hdrs(sr_pkt, len);
-      sr_send_packet(sr, sr_pkt, pkt_len, rtable->interface);
-    }
-
-    /* arp miss */
-    else {
-      uint8_t *arp_packet = construct_arp_buff(o_iface->addr,  o_iface->ip, rtable->gw.s_addr);
-      sr_send_packet(sr, arp_packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr), rtable->interface);
-      sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, sr_pkt, len, rtable->interface);
-    }      
-  }
-
+  /* send icmp packet */
+  printf("Send packet:\n");
+  print_hdrs(sr_pkt, pkt_len);
+  sr_send_packet(sr, sr_pkt, pkt_len, interface);
   free(sr_pkt);
   fprintf(stderr , "** Error: destination unreachable with error code %d.\n", icmp_code);
 
