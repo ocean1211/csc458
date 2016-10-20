@@ -39,7 +39,7 @@ void handle_arpreq(struct sr_instance* sr,  struct sr_arpreq* request) {
     /*get the difference between curren time and time that last time arp request was sent */
     double diff = difftime(now, request->sent);
     /*handle arp request */
-    if(diff > 1.0) {
+    if(diff >= 1.0) {
         /*arp request has been sent for 5 times, send icmp host */
         /*unreachable and destory arp request */
         if(request->times_sent >= 5){
