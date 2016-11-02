@@ -78,6 +78,8 @@ void sr_handlepacket(struct sr_instance* sr,
   assert(sr);
   assert(packet);
   assert(interface);
+  printf("Received packet:\n");
+  print_hdrs(packet, len);
 
   printf("*** -> Received packet of length %d \n",len);
 
@@ -175,6 +177,8 @@ void sr_handle_arp_request(struct sr_instance* sr,
   memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
   memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
+  printf("Send packet:\n");
+  print_hdrs(sr_pkt, len);
   sr_send_packet(sr, sr_pkt, len, interface);
   free(sr_pkt);
 
@@ -198,7 +202,9 @@ void sr_handle_arp_reply(struct sr_instance* sr,
   /* forward packets waiting on this arp reply */
   if (req) {
     sr_ethernet_hdr_t *ethernet_hdr;
+
     sr_ip_hdr_t *ip_hdr;
+
     struct sr_if* o_iface; /* outgoing interface */
     struct sr_packet *pkt;   
     for (pkt = req->packets; pkt; pkt = pkt->next) {
@@ -210,12 +216,16 @@ void sr_handle_arp_reply(struct sr_instance* sr,
       memcpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);
         
       /* update ip header */
+
       ip_hdr = (struct sr_ip_hdr *)(pkt->buf + sizeof(struct sr_ethernet_hdr));
+
       ip_hdr->ip_ttl--;
       bzero(&(ip_hdr->ip_sum), 2);
-      uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+      uint16_t ip_cksum = cksum(ip_hdr, sizeof(struct sr_ip_hdr));
       ip_hdr->ip_sum = ip_cksum;
 
+      printf("Send packet:\n");
+      print_hdrs(pkt->buf, pkt->len);
       sr_send_packet(sr, pkt->buf, pkt->len, pkt->iface);
     }
 
@@ -241,20 +251,31 @@ int sr_handle_ip_pkt(struct sr_instance* sr,
   assert(ip_hdr);  
 
   /* verify ip header checksum */  
-  if ((cksum(ip_hdr, sizeof(struct sr_ip_hdr))) != 0xffff) {
-    fprintf(stderr , "** Error: ip packet received with error\n");
+  if (cksum(ip_hdr, sizeof(struct sr_ip_hdr)) != 0xffff) {
+    fprintf(stderr , "** Error: ip_packet received with error\n");
     return -1;
   }
 
-  struct sr_if* iface = sr_get_interface(sr, interface);  
+  struct sr_if* iface = sr_get_interface(sr, interface);
   assert(iface);
 
   /* if the ip packet is for me */
+  struct sr_if *my_iface;
+  for (my_iface = sr->if_list; my_iface != NULL; my_iface = my_iface->next){
+    if (ip_hdr->ip_dst == my_iface->ip) {
+      sr_handle_icmp_pkt(sr, packet, len, interface);
+      return 0;
+    }
+  }
+
+  /*
   if (ip_hdr->ip_dst == iface->ip) {
     sr_handle_icmp_pkt(sr, packet, len, interface);
   }
+  */
+
   /* if it is not for me and its ttl greater than 1 */
-  else if (ip_hdr->ip_ttl > 1) {
+  if (ip_hdr->ip_ttl > 1) {
     sr_forward_ip_pkt(sr, packet, len, interface);
   }
   /* if it is not for me and ttl equal or less than 1,
@@ -296,8 +317,9 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
   
     if (cksum(icmp_hdr, len - sizeof(struct sr_ethernet_hdr) - 
               sizeof(struct sr_ip_hdr)) != 0xffff) {
-      fprintf(stderr , "** Error: packet received with error\n");
+      fprintf(stderr , "** Error: icmp_packet received with error\n");
       return -1;
+
     }
 
     if (icmp_hdr->icmp_type == 8) {  /* icmp echo request */
@@ -317,28 +339,56 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
 
       /*update ip header */
       ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
+      
+      uint32_t reply_src;
+      reply_src = ip_hdr->ip_dst;
       ip_hdr->ip_dst = ip_hdr->ip_src;
-      ip_hdr->ip_src = iface->ip;
-      ip_hdr->ip_ttl = 0xff;
-      bzero(&(ip_hdr->ip_sum), 2);  
-      uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
-      ip_hdr->ip_sum = ip_cksum;
+      ip_hdr->ip_src = reply_src;
+      /* LPM */
+      struct sr_rt *rtable;
+      rtable = sr_longest_prefix_match(sr, ip_hdr->ip_dst);
+      if (rtable->gw.s_addr) {
+        struct sr_if *o_iface = sr_get_interface(sr, rtable->interface);
+        ip_hdr->ip_p = ip_protocol_icmp;
+        ip_hdr->ip_ttl = 0xff;
+        bzero(&(ip_hdr->ip_sum), 2);
+        uint16_t ip_cksum = cksum(ip_hdr, 4*(ip_hdr->ip_hl));
+        ip_hdr->ip_sum = ip_cksum;
 
-      /* update ethernet header */
-      ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
-      memcpy(ethernet_hdr->ether_dhost, ethernet_hdr->ether_shost, ETHER_ADDR_LEN);
-      memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+        /* check arp cache for next hop mac */
+        struct sr_arpentry *arp_entry; 
+        arp_entry = sr_arpcache_lookup(&(sr->cache), rtable->gw.s_addr);
 
-      /* send icmp echo reply packet */
-      sr_send_packet(sr, sr_pkt, len, interface);
+        /*arp cache hit */
+        if (arp_entry) {
+          /* update ethernet header */
+          ethernet_hdr = (sr_ethernet_hdr_t *)sr_pkt;
+          memcpy(ethernet_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN); 
+          memcpy(ethernet_hdr->ether_shost, o_iface->addr, ETHER_ADDR_LEN);         
+
+          /* send icmp echo reply packet */
+          printf("Send packet:\n");
+          print_hdrs(sr_pkt, len);
+          sr_send_packet(sr, sr_pkt, len, rtable->interface);
+        }
+
+        /* arp miss */
+        else {
+          uint8_t *arp_packet = construct_arp_buff(o_iface->addr,  o_iface->ip, rtable->gw.s_addr);
+          sr_send_packet(sr, arp_packet, sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_arp_hdr), rtable->interface);
+          sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, sr_pkt, len, rtable->interface);
+        }      
+      }
+
       free(sr_pkt);
     }
   } 
+  
   else if ((len > (sizeof(struct sr_ethernet_hdr) + sizeof(struct sr_ip_hdr))) &&
-    ((ip_hdr->ip_p == 0x0006) || (ip_hdr->ip_p == 0x0011))) {
+    ((ip_hdr->ip_p == 0x0006) || (ip_hdr->ip_p == 0x0011))) {  
     /* icmp port unreachable */
     sr_icmp_dest_unreachable(sr, packet, len, interface, 3, 3);
-  }
+  }  
 
   return 0;
 } /* end sr_handle_icmp_pkt */
@@ -372,14 +422,31 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   bzero(&(icmp_t3_hdr->icmp_sum), 2);
   bzero(&(icmp_t3_hdr->unused), 2);
   bzero(&(icmp_t3_hdr->next_mtu), 2);
-  memcpy(icmp_t3_hdr->data, sr_pkt + sizeof(struct sr_ethernet_hdr), ICMP_DATA_SIZE);
+  memcpy(icmp_t3_hdr->data, packet + sizeof(struct sr_ethernet_hdr), ICMP_DATA_SIZE);
   uint16_t icmp_cksum = cksum(icmp_t3_hdr, sizeof(struct sr_icmp_t3_hdr));
   icmp_t3_hdr->icmp_sum = icmp_cksum;
 
   /* update ip header */ 
-  ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr)); 
-  ip_hdr->ip_dst = ip_hdr->ip_src;
-  ip_hdr->ip_src = iface->ip;
+  ip_hdr = (sr_ip_hdr_t *)(sr_pkt + sizeof(struct sr_ethernet_hdr));
+
+  /* Drop packet if ip_src is me */
+  struct sr_if *my_iface;
+  for (my_iface = sr->if_list; my_iface != NULL; my_iface = my_iface->next){
+    if (my_iface->ip == ip_hdr->ip_src){
+      return;
+    }
+  }
+  
+  if (icmp_code == 3){
+    uint32_t reply_src;
+    reply_src = ip_hdr->ip_dst;
+    ip_hdr->ip_dst = ip_hdr->ip_src;
+    ip_hdr->ip_src = reply_src;
+  }
+  else{
+    ip_hdr->ip_dst = ip_hdr->ip_src;
+    ip_hdr->ip_src = iface->ip;
+  }
   ip_hdr->ip_ttl = 0xff;
   ip_hdr->ip_p = ip_protocol_icmp;
   bzero(&(ip_hdr->ip_sum), 2);
@@ -392,9 +459,11 @@ void sr_icmp_dest_unreachable(struct sr_instance* sr,
   memcpy(ethernet_hdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
 
   /* send icmp packet */
+  printf("Send packet:\n");
+  print_hdrs(sr_pkt, pkt_len);
   sr_send_packet(sr, sr_pkt, pkt_len, interface);
   free(sr_pkt);
-  fprintf(stderr , "** Error: destination unreachable.\n");
+  fprintf(stderr , "** Error: destination unreachable with error code %d.\n", icmp_code);
 
   return;
 } /* sr_icmp_dest_unreachable */
@@ -414,28 +483,17 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
   uint32_t ip_dest;
   ip_dest = ip_hdr->ip_dst;
 
-  uint32_t gateway = 0;  /* next hop ip addr */
-  uint32_t mask = 0;
-  char o_interface[sr_IFACE_NAMELEN];   /* outgoing interface */    
   /* lookup the longest prefix match */
-  struct sr_rt *rt;
-  for (rt = sr->routing_table; rt != NULL; rt = rt->next) {
-    if (((ip_dest & rt->mask.s_addr) == rt->dest.s_addr) && 
-        (rt->mask.s_addr > mask)) {
-      gateway = rt->gw.s_addr;
-      mask = rt->mask.s_addr;
-      strncpy(o_interface, rt->interface, sr_IFACE_NAMELEN);
-    }
-  }
+   struct sr_rt *rtable = sr_longest_prefix_match(sr, ip_dest);
 
   /* if no match, icmp net unreachable */
-  if (! gateway) {
+  if (! rtable->gw.s_addr) {
     sr_icmp_dest_unreachable(sr, packet, len, interface, 3, 0);
     return;
   }
   /* match */
-  else {  
-    struct sr_if* o_iface = sr_get_interface(sr, o_interface);
+  else {   
+    struct sr_if* o_iface = sr_get_interface(sr, rtable->interface);
     assert(o_iface);
 
     /* make a copy of the packet */
@@ -444,7 +502,7 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
 
     /* check arp cache for next hop mac */
     struct sr_arpentry *arp_entry; 
-    arp_entry = sr_arpcache_lookup(&(sr->cache), gateway);
+    arp_entry = sr_arpcache_lookup(&(sr->cache), rtable->gw.s_addr);
 
     /*arp cache hit */
     if (arp_entry) {
@@ -461,17 +519,41 @@ void sr_forward_ip_pkt(struct sr_instance* sr,
       ip_hdr->ip_sum = ip_cksum;      
 
       /* send frame to next hop */
-      sr_send_packet(sr, sr_pkt, len, o_interface);
+      printf("Send packet:\n");
+      print_hdrs(sr_pkt, len);
+      sr_send_packet(sr, sr_pkt, len, rtable->interface);
       free(arp_entry);
     }    
     /* arp miss */
     else {
-      sr_arpcache_queuereq(&(sr->cache), gateway, packet, len, o_interface);
+      sr_arpcache_queuereq(&(sr->cache), rtable->gw.s_addr, packet, len, rtable->interface);
     }
     free(sr_pkt);
+    free(rtable);
   }
 
   return;
 } /* end sr_forward_ip_pkt */
+
+/* Longest prefix match */
+struct sr_rt *sr_longest_prefix_match(struct sr_instance* sr, uint32_t ip)
+{
+  assert(sr);
+  assert(ip);
+  struct sr_rt *rtable = (struct sr_rt *)malloc(sizeof(struct sr_rt));
+  rtable->gw.s_addr = 0;
+  rtable->mask.s_addr = 0;
+
+  struct sr_rt *rt;
+  for (rt = sr->routing_table; rt != NULL; rt = rt->next) {
+    if (((ip & rt->mask.s_addr) == rt->dest.s_addr) && 
+        (rt->mask.s_addr > rtable->mask.s_addr)) {
+      memcpy(rtable, rt, sizeof(struct sr_rt));      
+    }
+  }
+
+  return rtable;
+} /* end sr_longest_prefix_match */
+
 
 

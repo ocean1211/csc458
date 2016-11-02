@@ -68,6 +68,7 @@ int sr_read_from_server(struct sr_instance* );
 void sr_init(struct sr_instance* );
 void sr_handlepacket(struct sr_instance* , uint8_t * , unsigned int , char* );
 
+
 int sr_handle_arp_pkt(struct sr_instance* , uint8_t * , unsigned int , char* );
 void sr_handle_arp_request(struct sr_instance* , uint8_t * , unsigned int , char* );
 void sr_handle_arp_reply(struct sr_instance* , uint8_t * , unsigned int , char* );
@@ -75,6 +76,8 @@ int sr_handle_ip_pkt(struct sr_instance* , uint8_t * , unsigned int , char* );
 int sr_handle_icmp_pkt(struct sr_instance* , uint8_t * , unsigned int , char* );
 void sr_icmp_dest_unreachable(struct sr_instance* , uint8_t * , unsigned int , char* , uint8_t, uint8_t );
 void sr_forward_ip_pkt(struct sr_instance* , uint8_t * , unsigned int , char* );
+struct sr_rt *sr_longest_prefix_match(struct sr_instance*, uint32_t);
+
 
 
 /* -- sr_if.c -- */
