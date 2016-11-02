@@ -241,8 +241,8 @@ int sr_handle_ip_pkt(struct sr_instance* sr,
   assert(ip_hdr);  
 
   /* verify ip header checksum */  
-  if (cksum(ip_hdr, 4*(ip_hdr->ip_hl)) != 0) {
-    fprintf(stderr , "** Error: packet received with error\n");
+  if ((cksum(ip_hdr, sizeof(struct sr_ip_hdr))) != 0xffff) {
+    fprintf(stderr , "** Error: ip packet received with error\n");
     return -1;
   }
 
@@ -295,7 +295,7 @@ int sr_handle_icmp_pkt(struct sr_instance* sr,
         sizeof(struct sr_ip_hdr));      
   
     if (cksum(icmp_hdr, len - sizeof(struct sr_ethernet_hdr) - 
-              sizeof(struct sr_ip_hdr)) != 0) {
+              sizeof(struct sr_ip_hdr)) != 0xffff) {
       fprintf(stderr , "** Error: packet received with error\n");
       return -1;
     }
